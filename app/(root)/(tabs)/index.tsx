@@ -1,5 +1,7 @@
+import seed from "@/lib/seed";
 import {
   ActivityIndicator,
+  Button,
   FlatList,
   Image,
   Text,
@@ -22,6 +24,7 @@ import { useGlobalContext } from "@/lib/global-provider";
 import { getLatestProperties, getProperties } from "@/lib/appwrite";
 
 const Home = () => {
+  console.log("HOME SCREEN RENDERED");
   const { user } = useGlobalContext();
 
   const params = useLocalSearchParams<{ query?: string; filter?: string }>();
@@ -49,7 +52,7 @@ const Home = () => {
     refetch({
       filter: params.filter!,
       query: params.query!,
-      limit: 6,
+      limit: 10,
     });
   }, [params.filter, params.query]);
 
@@ -130,7 +133,16 @@ const Home = () => {
               )}
             </View>
 
-            {/* <Button title="seed" onPress={seed} /> */}
+            {/*
+             <Button
+               title="Seed"
+               onPress={async () => {
+                 console.log("SEED BUTTON CLICKED");
+                 await seed();
+                 console.log("SEED FINISHED");
+               }}
+             />
+            */}
 
             <View className="mt-5">
               <View className="flex flex-row items-center justify-between">

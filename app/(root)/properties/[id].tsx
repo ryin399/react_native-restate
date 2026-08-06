@@ -29,6 +29,7 @@ const Property = () => {
       id: id!,
     },
   });
+  console.log("PROPERTY DATA:", property);
 
   return (
     <View>
@@ -190,14 +191,14 @@ const Property = () => {
             )}
           </View>
 
-          {property?.gallery.length > 0 && (
+          {property?.galleries.length > 0 && (
             <View className="mt-7">
               <Text className="text-black-300 text-xl font-rubik-bold">
                 Gallery
               </Text>
               <FlatList
                 contentContainerStyle={{ paddingRight: 20 }}
-                data={property?.gallery}
+                data={property?.galleries}
                 keyExtractor={(item) => item.$id}
                 horizontal
                 showsHorizontalScrollIndicator={false}

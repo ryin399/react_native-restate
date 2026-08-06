@@ -6,6 +6,7 @@ import {
   propertiesImages,
   reviewImages,
 } from "./data";
+import { reload } from "expo-router/build/global-state/routing";
 
 const COLLECTIONS = {
   AGENT: config.agentsCollectionId,
@@ -16,24 +17,21 @@ const COLLECTIONS = {
 
 const propertyTypes = [
   "House",
-  "Townhomes",
-  "Condos",
-  "Duplexes",
-  "Studios",
+  "Townhouse",
+  "Condo",
+  "Duplex",
+  "Studio",
   "Villa",
-  "Apartments",
-  "Others",
+  "Apartment",
+  "Other",
 ];
 
 const facilities = [
   "Laundry",
-  "Car Parking",
-  "Sports Center",
-  "Cutlery",
+  "Parking",
   "Gym",
-  "Swimming pool",
-  "Wifi",
-  "Pet Center",
+  "wifi",
+  "Pet-friendly",
 ];
 
 function getRandomSubset<T>(
@@ -71,6 +69,7 @@ function getRandomSubset<T>(
 }
 
 async function seed() {
+  console.log("SEED FUNCTION STARTED");
   try {
     // Clear existing data from all collections
     for (const key in COLLECTIONS) {
@@ -149,6 +148,7 @@ async function seed() {
       const selectedFacilities = facilities
         .sort(() => 0.5 - Math.random())
         .slice(0, Math.floor(Math.random() * facilities.length) + 1);
+        console.log("Selected Facilities:", selectedFacilities);
 
       const image =
         propertiesImages.length - 1 >= i
@@ -176,7 +176,7 @@ async function seed() {
           image: image,
           agent: assignedAgent.$id,
           reviews: assignedReviews.map((review) => review.$id),
-          gallery: assignedGalleries.map((gallery) => gallery.$id),
+          galleries: assignedGalleries.map((gallery) => gallery.$id)
         }
       );
 
@@ -184,8 +184,12 @@ async function seed() {
     }
 
     console.log("Data seeding completed.");
-  } catch (error) {
-    console.error("Error seeding data:", error);
+  } catch (error: any) {
+  console.log("========== SEED ERROR ==========");
+  console.log("Message:", error?.message);
+  console.log("Code:", error?.code);
+  console.log("Type:", error?.type);
+  console.log(error);
   }
 }
 
