@@ -96,7 +96,7 @@ export default async ({ req, res, log, error }) => {
     // ==========================================
 
     const databaseId =
-      "YOUR_DATABASE_ID";
+      "6a5cb612000c39b9d496D";
 
     const propertiesTableId =
       "properties";
