@@ -40,7 +40,7 @@ export default async ({ req, res, log, error }) => {
     }
 
     const ai = new GoogleGenAI({
-      apiKey,
+      apiKey: apiKey,
     });
 
     const response = await ai.models.generateContent({
@@ -53,25 +53,24 @@ export default async ({ req, res, log, error }) => {
       },
     });
 
+    const reply = response.text;
+
+    log(`Gemini response received: ${reply ? "yes" : "empty"}`);
+
     return res.json({
       success: true,
-      reply:
-        response.text ||
-        "Sorry, I could not generate a response.",
+      reply: reply || "Sorry, I could not generate a response.",
     });
   } catch (err) {
-    error(
-      `Gemini error: ${
-        err instanceof Error
-          ? err.message
-          : String(err)
-      }`
-    );
+    const errorMessage =
+      err instanceof Error ? err.message : String(err);
+
+    error(`Gemini error: ${errorMessage}`);
 
     return res.json(
       {
         success: false,
-        error: "Failed to get response from Gemini.",
+        error: errorMessage,
       },
       500
     );
