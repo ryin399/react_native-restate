@@ -38,8 +38,7 @@ export default async ({ req, res, log, error }) => {
     // GEMINI API KEY
     // ==========================================
 
-    const geminiApiKey =
-      process.env.GEMINI_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
 
     if (!geminiApiKey) {
       error("GEMINI_API_KEY is missing");
@@ -60,8 +59,10 @@ export default async ({ req, res, log, error }) => {
     const projectId =
       process.env.APPWRITE_FUNCTION_PROJECT_ID;
 
+    // Appwrite automatically provides the dynamic
+    // API key in the x-appwrite-key header
     const appwriteApiKey =
-      process.env.APPWRITE_FUNCTION_API_KEY;
+      req.headers["x-appwrite-key"];
 
     if (!projectId || !appwriteApiKey) {
       error("Appwrite function credentials are missing");
@@ -80,9 +81,7 @@ export default async ({ req, res, log, error }) => {
     // APPWRITE CLIENT
     // ==========================================
 
-    const client = new Client();
-
-    client
+    const client = new Client()
       .setEndpoint(
         "https://fra.cloud.appwrite.io/v1"
       )
@@ -92,7 +91,7 @@ export default async ({ req, res, log, error }) => {
     const tablesDB = new TablesDB(client);
 
     // ==========================================
-    // GET PROPERTY DATA
+    // DATABASE / TABLE
     // ==========================================
 
     const databaseId =
@@ -100,6 +99,10 @@ export default async ({ req, res, log, error }) => {
 
     const propertiesTableId =
       "properties";
+
+    // ==========================================
+    // GET PROPERTY DATA
+    // ==========================================
 
     const propertyResult =
       await tablesDB.listRows({
@@ -117,7 +120,7 @@ export default async ({ req, res, log, error }) => {
     );
 
     // ==========================================
-    // PREPARE PROPERTY DATA FOR GEMINI
+    // PREPARE PROPERTY DATA
     // ==========================================
 
     const propertyData = properties.map(
@@ -139,12 +142,16 @@ export default async ({ req, res, log, error }) => {
     );
 
     // ==========================================
-    // GEMINI
+    // GEMINI AI
     // ==========================================
 
     const ai = new GoogleGenAI({
       apiKey: geminiApiKey,
     });
+
+    // ==========================================
+    // SYSTEM INSTRUCTION
+    // ==========================================
 
     const systemInstruction = `
 You are Real State AI, the official AI assistant
@@ -153,21 +160,21 @@ for a real estate application.
 IMPORTANT RULES:
 
 1. You MUST use only the property data provided
-   below.
+   below when answering property-related questions.
 
-2. NEVER invent a property, price, address,
-   area, bedroom count, bathroom count,
-   rating, or facility.
+2. NEVER invent a property, price, address, area,
+   bedroom count, bathroom count, rating,
+   or facility.
 
 3. If the requested property does not exist
-   in the provided database data, clearly say
-   that no matching property was found.
+   in the database data, clearly say that no
+   matching property was found.
 
 4. Do not pretend that a property exists when
    it is not present in the database.
 
 5. If the user asks about properties, use the
-   database data to answer.
+   database data below.
 
 6. If the user asks a general question that is
    not about properties, answer normally.
@@ -176,10 +183,22 @@ IMPORTANT RULES:
 
 8. Prices are in Bangladeshi Taka (BDT).
 
+9. If the user asks for a specific location,
+   search the provided address/location data
+   carefully before answering.
+
+10. If there are no matching properties,
+    clearly say that there are currently no
+    matching properties in the database.
+
 CURRENT PROPERTY DATABASE:
 
 ${JSON.stringify(propertyData, null, 2)}
 `;
+
+    // ==========================================
+    // GENERATE AI RESPONSE
+    // ==========================================
 
     const response =
       await ai.models.generateContent({
@@ -198,6 +217,10 @@ ${JSON.stringify(propertyData, null, 2)}
         reply ? "yes" : "empty"
       }`
     );
+
+    // ==========================================
+    // RETURN RESPONSE
+    // ==========================================
 
     return res.json({
       success: true,
