@@ -1,3 +1,4 @@
+import heartFilled from "@/assets/icons/heart-filled.png";
 import google from "@/assets/icons/google.png";
 import home from "@/assets/icons/home.png";
 import search from "@/assets/icons/search.png";
@@ -41,6 +42,7 @@ export default {
   filter,
   star,
   heart,
+  heartFilled,
   backArrow,
   calendar,
   info,

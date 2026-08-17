@@ -16,16 +16,23 @@ import icons from "@/constants/icons";
 import images from "@/constants/images";
 
 const Auth = () => {
-  const { refetch, loading, isLogged } = useGlobalContext();
+  const { refetch, loading, isLogged } =
+    useGlobalContext();
 
-  if (!loading && isLogged) return <Redirect href="/" />;
+  if (!loading && isLogged) {
+    return <Redirect href="/" />;
+  }
 
   const handleLogin = async () => {
     const result = await login();
+
     if (result) {
       refetch();
     } else {
-      Alert.alert("Error", "Failed to login");
+      Alert.alert(
+        "Error",
+        "Failed to login"
+      );
     }
   };
 
@@ -48,8 +55,10 @@ const Auth = () => {
           </Text>
 
           <Text className="text-3xl font-rubik-bold text-black-300 text-center mt-2">
-            Let's Get You Closer To {"\n"}
-            <Text className="text-primary-300">Your Ideal Home</Text>
+            Let's Get You Closer To{"\n"}
+            <Text className="text-primary-300">
+              Your Ideal Home
+            </Text>
           </Text>
 
           <Text className="text-lg font-rubik text-black-200 text-center mt-12">
@@ -66,6 +75,7 @@ const Auth = () => {
                 className="w-5 h-5"
                 resizeMode="contain"
               />
+
               <Text className="text-lg font-rubik-medium text-black-300 ml-2">
                 Continue with Google
               </Text>
