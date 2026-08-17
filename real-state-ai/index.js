@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { Client, TablesDB } from "node-appwrite";
+import { Client, TablesDB, Query } from "node-appwrite";
 
 export default async ({ req, res, log, error }) => {
   try {
@@ -22,9 +22,12 @@ export default async ({ req, res, log, error }) => {
     // ==========================================
 
     const body = req.bodyJson || {};
-    const message = body.message;
+    const message =
+      typeof body.message === "string"
+        ? body.message.trim()
+        : "";
 
-    if (!message || typeof message !== "string") {
+    if (!message) {
       return res.json(
         {
           success: false,
@@ -34,7 +37,7 @@ export default async ({ req, res, log, error }) => {
       );
     }
 
-    const userMessage = message.trim();
+    log(`User message: ${message}`);
 
     // ==========================================
     // GEMINI API KEY
@@ -56,51 +59,29 @@ export default async ({ req, res, log, error }) => {
     }
 
     // ==========================================
-    // APPWRITE FUNCTION CREDENTIALS
+    // APPWRITE CREDENTIALS
     // ==========================================
 
     const projectId =
       process.env.APPWRITE_FUNCTION_PROJECT_ID;
 
-    // Try request header first.
-    // If unavailable, use Appwrite function environment variable.
     const appwriteApiKey =
-      req.headers["x-appwrite-key"] ||
       process.env.APPWRITE_FUNCTION_API_KEY;
 
-    if (!projectId) {
-      error(
-        "APPWRITE_FUNCTION_PROJECT_ID is missing"
-      );
+    if (!projectId || !appwriteApiKey) {
+      error("Appwrite function credentials are missing");
 
       return res.json(
         {
           success: false,
           error:
-            "Appwrite project ID is missing",
+            "Appwrite function credentials are missing",
         },
         500
       );
     }
 
-    if (!appwriteApiKey) {
-      error(
-        "Appwrite API key is missing"
-      );
-
-      return res.json(
-        {
-          success: false,
-          error:
-            "Appwrite function API key is missing",
-        },
-        500
-      );
-    }
-
-    log(
-      "Appwrite credentials detected"
-    );
+    log("Appwrite credentials detected");
 
     // ==========================================
     // APPWRITE CLIENT
@@ -115,12 +96,15 @@ export default async ({ req, res, log, error }) => {
       .setProject(projectId)
       .setKey(appwriteApiKey);
 
-    const tablesDB =
-      new TablesDB(client);
+    const tablesDB = new TablesDB(client);
 
     // ==========================================
     // DATABASE CONFIG
     // ==========================================
+
+    // IMPORTANT:
+    // Exact database ID.
+    // DO NOT add D at the end.
 
     const databaseId =
       "6a5cb612000c39b9d496";
@@ -129,14 +113,16 @@ export default async ({ req, res, log, error }) => {
       "properties";
 
     // ==========================================
-    // GET PROPERTIES
+    // FETCH PROPERTIES
     // ==========================================
 
     const propertyResult =
       await tablesDB.listRows({
         databaseId,
         tableId: propertiesTableId,
-        queries: [],
+        queries: [
+          Query.limit(100),
+        ],
         total: false,
       });
 
@@ -148,77 +134,242 @@ export default async ({ req, res, log, error }) => {
     );
 
     // ==========================================
+    // CLEAN PROPERTY DATA
+    // ==========================================
+
+    const propertyData = properties.map(
+      (property) => ({
+        id: property.$id,
+        name: property.name ?? "",
+        type: property.type ?? "",
+        description:
+          property.description ?? "",
+        address: property.address ?? "",
+        price: property.price ?? 0,
+        area: property.area ?? 0,
+        bedrooms:
+          property.bedrooms ?? 0,
+        bathrooms:
+          property.bathrooms ?? 0,
+        rating:
+          property.rating ?? 0,
+        facilities:
+          property.facilities ?? [],
+        geolocation:
+          property.geolocation ?? "",
+        image:
+          property.image ?? "",
+      })
+    );
+
+    // ==========================================
     // NORMALIZE TEXT
     // ==========================================
 
-    const normalize = (value) => {
-      return String(value || "")
+    const normalize = (text) =>
+      String(text || "")
         .toLowerCase()
+        .replace(/[.,!?;:()[\]{}]/g, " ")
+        .replace(/\s+/g, " ")
         .trim();
-    };
 
     const normalizedMessage =
-      normalize(userMessage);
+      normalize(message);
 
     // ==========================================
-    // DETECT BEDROOM COUNT
+    // DETECT "ALL PROPERTIES" REQUEST
     // ==========================================
 
-    let requestedBedrooms = null;
+    const wantsAllProperties =
+      normalizedMessage.includes("all property") ||
+      normalizedMessage.includes("all properties") ||
+      normalizedMessage.includes("sob property") ||
+      normalizedMessage.includes("sobgulo property") ||
+      normalizedMessage.includes("sob gula property") ||
+      normalizedMessage.includes("সব property") ||
+      normalizedMessage.includes("সবগুলো property") ||
+      normalizedMessage.includes("সব property") ||
+      normalizedMessage.includes("সবগুলো প্রপার্টি") ||
+      normalizedMessage.includes("সব প্রপার্টি") ||
+      normalizedMessage.includes("list all") ||
+      normalizedMessage.includes("full list") ||
+      normalizedMessage.includes("পুরো লিস্ট") ||
+      normalizedMessage.includes("পুরো তালিকা");
 
-    const bedroomPatterns = [
-      /(\d+)\s*bedrooms?/i,
-      /(\d+)\s*bed\s*rooms?/i,
-      /(\d+)\s*bed/i,
-      /(\d+)\s*বেডরুম/i,
-      /(\d+)\s*বেড\s*রুম/i,
-    ];
+    // ==========================================
+    // DIRECT ALL PROPERTY LIST
+    // ==========================================
 
-    for (const pattern of bedroomPatterns) {
-      const match =
-        normalizedMessage.match(pattern);
+    if (wantsAllProperties) {
+      log("Detected request for all properties");
 
-      if (match) {
-        requestedBedrooms =
-          Number(match[1]);
-
-        break;
+      if (propertyData.length === 0) {
+        return res.json({
+          success: true,
+          reply:
+            "দুঃখিত, বর্তমানে database-এ কোনো property পাওয়া যায়নি।",
+        });
       }
+
+      const list = propertyData
+        .map(
+          (property, index) =>
+            `${index + 1}. ${property.name}
+Type: ${property.type}
+Address: ${property.address}
+Price: ${property.price} BDT
+Area: ${property.area} sq. ft.
+Bedrooms: ${property.bedrooms}
+Bathrooms: ${property.bathrooms}
+Rating: ${property.rating}/5`
+        )
+        .join("\n\n");
+
+      return res.json({
+        success: true,
+        reply:
+          `বর্তমানে আমাদের database-এ ${propertyData.length}টি property আছে:\n\n${list}`,
+      });
+    }
+
+    // ==========================================
+    // DETECT PROPERTY NUMBER / NAME
+    // ==========================================
+
+    let selectedProperty = null;
+
+    // Property 4
+    const propertyNumberMatch =
+      normalizedMessage.match(
+        /property\s*(\d+)/
+      );
+
+    if (propertyNumberMatch) {
+      const number =
+        Number(propertyNumberMatch[1]);
+
+      selectedProperty =
+        propertyData.find(
+          (property) =>
+            normalize(property.name) ===
+            `property ${number}`
+        ) || null;
+    }
+
+    // ==========================================
+    // DIRECT PROPERTY DETAILS
+    // ==========================================
+
+    if (selectedProperty) {
+      log(
+        `Direct property match: ${selectedProperty.name}`
+      );
+
+      const facilities =
+        Array.isArray(
+          selectedProperty.facilities
+        )
+          ? selectedProperty.facilities.join(
+              ", "
+            )
+          : selectedProperty.facilities || "N/A";
+
+      return res.json({
+        success: true,
+        reply:
+          `Here are the details for ${selectedProperty.name}:\n\n` +
+          `Name: ${selectedProperty.name}\n` +
+          `Type: ${selectedProperty.type}\n` +
+          `Address: ${selectedProperty.address}\n` +
+          `Price: ${selectedProperty.price} BDT\n` +
+          `Area: ${selectedProperty.area} sq. ft.\n` +
+          `Bedrooms: ${selectedProperty.bedrooms}\n` +
+          `Bathrooms: ${selectedProperty.bathrooms}\n` +
+          `Rating: ${selectedProperty.rating}/5\n` +
+          `Facilities: ${facilities}`,
+      });
+    }
+
+    // ==========================================
+    // DETECT BEDROOM FILTER
+    // ==========================================
+
+    let bedroomFilter = null;
+
+    const bedroomMatch =
+      normalizedMessage.match(
+        /(\d+)\s*(bedroom|bedrooms|bed|বেডরুম|বেড)/
+      );
+
+    if (bedroomMatch) {
+      bedroomFilter =
+        Number(bedroomMatch[1]);
+    }
+
+    // ==========================================
+    // DETECT BATHROOM FILTER
+    // ==========================================
+
+    let bathroomFilter = null;
+
+    const bathroomMatch =
+      normalizedMessage.match(
+        /(\d+)\s*(bathroom|bathrooms|bath|বাথরুম|বাথ)/
+      );
+
+    if (bathroomMatch) {
+      bathroomFilter =
+        Number(bathroomMatch[1]);
     }
 
     // ==========================================
     // DETECT PROPERTY TYPE
     // ==========================================
 
-    let requestedType = null;
+    let typeFilter = null;
 
     if (
-      normalizedMessage.includes("apartment") ||
-      normalizedMessage.includes("flat") ||
-      normalizedMessage.includes("ফ্ল্যাট") ||
-      normalizedMessage.includes("অ্যাপার্টমেন্ট")
+      normalizedMessage.includes(
+        "apartment"
+      ) ||
+      normalizedMessage.includes(
+        "অ্যাপার্টমেন্ট"
+      )
     ) {
-      requestedType = "apartment";
+      typeFilter = "Apartment";
     } else if (
-      normalizedMessage.includes("condo") ||
-      normalizedMessage.includes("কনডো")
+      normalizedMessage.includes(
+        "villa"
+      ) ||
+      normalizedMessage.includes(
+        "ভিলা"
+      )
     ) {
-      requestedType = "condo";
+      typeFilter = "Villa";
     } else if (
-      normalizedMessage.includes("house") ||
-      normalizedMessage.includes("বাড়ি") ||
-      normalizedMessage.includes("বাড়ি")
+      normalizedMessage.includes(
+        "condo"
+      ) ||
+      normalizedMessage.includes(
+        "কন্ডো"
+      )
     ) {
-      requestedType = "house";
+      typeFilter = "Condo";
     } else if (
-      normalizedMessage.includes("villa") ||
-      normalizedMessage.includes("ভিলা")
+      normalizedMessage.includes(
+        "house"
+      ) ||
+      normalizedMessage.includes(
+        "হাউস"
+      )
     ) {
-      requestedType = "villa";
+      typeFilter = "House";
     } else if (
-      normalizedMessage.includes("townhouse")
+      normalizedMessage.includes(
+        "townhouse"
+      )
     ) {
-      requestedType = "townhouse";
+      typeFilter = "Townhouse";
     }
 
     // ==========================================
@@ -227,205 +378,145 @@ export default async ({ req, res, log, error }) => {
 
     const knownLocations = [
       "shewrapara",
-      "শেওড়াপাড়া",
-      "শেওড়াপাড়া",
-
       "mirpur",
-      "মিরপুর",
-
-      "kazipara",
-      "kazi para",
-      "কাজীপাড়া",
-      "কাজীপাড়া",
-
       "gulshan",
-      "গুলশান",
-
       "banani",
-      "বনানী",
-
       "dhanmondi",
-      "ধানমন্ডি",
-
       "uttara",
-      "উত্তরা",
-
       "mohammadpur",
-      "মোহাম্মদপুর",
-
-      "bashundhara",
-      "বসুন্ধরা",
-
-      "badda",
-      "বাড্ডা",
-
+      "kazipara",
       "farmgate",
-      "ফার্মগেট",
-
-      "motijheel",
-      "মতিঝিল",
-
-      "paltan",
-      "পল্টন",
-
-      "tejgaon",
-      "তেজগাঁও",
-
-      "khilgaon",
-      "খিলগাঁও",
-
-      "ramna",
-      "রমনা",
+      "badda",
     ];
 
-    let requestedLocation = null;
+    let locationFilter = null;
 
     for (const location of knownLocations) {
       if (
-        normalizedMessage.includes(
-          normalize(location)
-        )
+        normalizedMessage.includes(location)
       ) {
-        requestedLocation =
-          location;
-
+        locationFilter = location;
         break;
       }
     }
 
     // ==========================================
-    // LOG DETECTED FILTERS
+    // FILTER PROPERTIES
+    // ==========================================
+
+    let matchingProperties =
+      propertyData;
+
+    if (bedroomFilter !== null) {
+      matchingProperties =
+        matchingProperties.filter(
+          (property) =>
+            Number(property.bedrooms) ===
+            bedroomFilter
+        );
+    }
+
+    if (bathroomFilter !== null) {
+      matchingProperties =
+        matchingProperties.filter(
+          (property) =>
+            Number(property.bathrooms) ===
+            bathroomFilter
+        );
+    }
+
+    if (typeFilter !== null) {
+      matchingProperties =
+        matchingProperties.filter(
+          (property) =>
+            normalize(property.type) ===
+            normalize(typeFilter)
+        );
+    }
+
+    if (locationFilter !== null) {
+      matchingProperties =
+        matchingProperties.filter(
+          (property) => {
+            const address =
+              normalize(
+                property.address
+              );
+
+            const description =
+              normalize(
+                property.description
+              );
+
+            const geo =
+              normalize(
+                property.geolocation
+              );
+
+            return (
+              address.includes(
+                locationFilter
+              ) ||
+              description.includes(
+                locationFilter
+              ) ||
+              geo.includes(
+                locationFilter
+              )
+            );
+          }
+        );
+    }
+
+    // ==========================================
+    // LOG FILTERS
     // ==========================================
 
     log(
       `Detected filters -> location: ${
-        requestedLocation || "none"
+        locationFilter || "none"
       }, bedrooms: ${
-        requestedBedrooms ?? "none"
+        bedroomFilter ?? "none"
+      }, bathrooms: ${
+        bathroomFilter ?? "none"
       }, type: ${
-        requestedType || "none"
+        typeFilter || "none"
       }`
     );
 
-    // ==========================================
-    // FILTER PROPERTIES
-    // ==========================================
-
-    const filteredProperties =
-      properties.filter((property) => {
-        // ----------------------------------------
-        // BEDROOM FILTER
-        // ----------------------------------------
-
-        if (
-          requestedBedrooms !== null &&
-          Number(property.bedrooms) !==
-            requestedBedrooms
-        ) {
-          return false;
-        }
-
-        // ----------------------------------------
-        // TYPE FILTER
-        // ----------------------------------------
-
-        if (requestedType) {
-          const propertyType =
-            normalize(property.type);
-
-          if (
-            propertyType !==
-            requestedType
-          ) {
-            return false;
-          }
-        }
-
-        // ----------------------------------------
-        // LOCATION FILTER
-        // ----------------------------------------
-
-        if (requestedLocation) {
-          const searchableText =
-            normalize(
-              [
-                property.address,
-                property.description,
-                property.geolocation,
-                property.name,
-              ].join(" ")
-            );
-
-          const location =
-            normalize(
-              requestedLocation
-            );
-
-          if (
-            !searchableText.includes(
-              location
-            )
-          ) {
-            return false;
-          }
-        }
-
-        return true;
-      });
-
-    // ==========================================
-    // LOG FILTER RESULT
-    // ==========================================
-
     log(
-      `Matching properties: ${filteredProperties.length}`
+      `Matching properties: ${matchingProperties.length}`
     );
 
     // ==========================================
     // NO MATCH
     // ==========================================
 
+    const hasFilter =
+      bedroomFilter !== null ||
+      bathroomFilter !== null ||
+      typeFilter !== null ||
+      locationFilter !== null;
+
     if (
-      filteredProperties.length === 0
+      hasFilter &&
+      matchingProperties.length === 0
     ) {
-      const isBangla =
-        /[\u0980-\u09FF]/.test(
-          userMessage
-        );
-
-      let noMatchReply;
-
-      if (isBangla) {
-        noMatchReply =
-          "দুঃখিত, আপনার দেওয়া শর্ত অনুযায়ী আমাদের ডাটাবেসে কোনো matching property পাওয়া যায়নি। আপনি চাইলে অন্য এলাকা, bedroom সংখ্যা অথবা property type দিয়ে আবার খুঁজতে পারেন।";
-      } else {
-        noMatchReply =
-          "Sorry, I couldn't find any property in our database matching your requirements. You can try another location, bedroom count, or property type.";
-      }
-
       return res.json({
         success: true,
-        reply: noMatchReply,
-        properties: [],
-        filters: {
-          location:
-            requestedLocation,
-          bedrooms:
-            requestedBedrooms,
-          type:
-            requestedType,
-        },
+        reply:
+          "দুঃখিত, বর্তমানে আমাদের database-এ আপনার চাহিদার সাথে মিলে এমন কোনো property পাওয়া যায়নি। আপনি অন্য location, bedroom সংখ্যা বা property type দিয়ে চেষ্টা করতে পারেন।",
       });
     }
 
     // ==========================================
-    // PREPARE MATCHING PROPERTY DATA
+    // DATA FOR GEMINI
     // ==========================================
 
-    const propertyData =
-      filteredProperties.map(
+    const dataForGemini =
+      matchingProperties.map(
         (property) => ({
-          id: property.$id,
+          id: property.id,
           name: property.name,
           type: property.type,
           description:
@@ -443,7 +534,6 @@ export default async ({ req, res, log, error }) => {
             property.facilities,
           geolocation:
             property.geolocation,
-          image: property.image,
         })
       );
 
@@ -456,100 +546,65 @@ export default async ({ req, res, log, error }) => {
         apiKey: geminiApiKey,
       });
 
-    // ==========================================
-    // SYSTEM INSTRUCTION
-    // ==========================================
-
     const systemInstruction = `
 You are Real State AI, the official AI assistant
 for a real estate application.
 
-The backend has already filtered the database
-according to the user's request.
+STRICT RULES:
 
-IMPORTANT RULES:
-
-1. ONLY use the property data provided below.
+1. Use ONLY the property data provided below.
 
 2. NEVER invent a property.
 
 3. NEVER invent a price, address, area,
-   bedroom count, bathroom count, rating,
-   facility, or location.
+bedroom count, bathroom count, rating,
+facility, or location.
 
-4. NEVER mention a property that is not
-   included in the provided data.
+4. If the provided property data contains
+no matching property, say that no matching
+property was found.
 
-5. If matching properties are provided,
-   answer using ONLY those properties.
+5. Do NOT create fake "Property 1",
+"Property 2", etc.
 
-6. If multiple matching properties exist,
-   list them clearly.
+6. Use the exact property name from the data.
 
-7. Answer in the SAME LANGUAGE as the user.
+7. If the user asks for property details,
+use only the provided database information.
 
-8. Prices are in Bangladeshi Taka (BDT).
+8. If the user asks for a list, include
+all relevant properties from the provided data.
 
-9. Do NOT use Markdown symbols such as:
-   **, ##, ###
+9. Do not say that you searched the internet.
 
-10. Keep the answer natural and easy to read.
+10. Prices are in Bangladeshi Taka (BDT).
 
-11. If the user asks a follow-up question
-   about a property, use only the data
-   provided below.
+11. Answer in the same language/style as
+the user's message.
 
-12. Do not claim that a property is in a
-   location unless that location appears
-   in the provided property data.
+12. Keep the answer concise and useful.
 
-13. If the user asks for a property that
-   is not in the provided data, clearly say
-   that no matching property was found.
-
-FILTERS DETECTED BY BACKEND:
-
-Location:
-${requestedLocation || "Not specified"}
-
-Bedrooms:
-${requestedBedrooms ?? "Not specified"}
-
-Property type:
-${requestedType || "Not specified"}
-
-MATCHING PROPERTY DATA:
+PROPERTY DATA:
 
 ${JSON.stringify(
-  propertyData,
+  dataForGemini,
   null,
   2
 )}
 `;
 
-    // ==========================================
-    // GENERATE GEMINI RESPONSE
-    // ==========================================
-
     const response =
       await ai.models.generateContent({
-        model:
-          "gemini-3.6-flash",
-
-        contents:
-          userMessage,
-
+        model: "gemini-3.6-flash",
+        contents: message,
         config: {
-          systemInstruction:
-            systemInstruction,
-
-          maxOutputTokens: 700,
+          systemInstruction,
+          maxOutputTokens: 2000,
         },
       });
 
     const reply =
-      response.text ||
-      "Sorry, I could not generate a response.";
+      response.text?.trim();
 
     log(
       `Gemini response received: ${
@@ -563,22 +618,9 @@ ${JSON.stringify(
 
     return res.json({
       success: true,
-
-      reply,
-
-      properties:
-        propertyData,
-
-      filters: {
-        location:
-          requestedLocation,
-
-        bedrooms:
-          requestedBedrooms,
-
-        type:
-          requestedType,
-      },
+      reply:
+        reply ||
+        "দুঃখিত, আমি এই মুহূর্তে উত্তর তৈরি করতে পারছি না।",
     });
   } catch (err) {
     const errorMessage =
